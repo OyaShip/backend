@@ -36,6 +36,8 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+  if (!/^G[A-Z2-7]{55}$/.test(userId))
+    return res.status(400).json({ error: 'invalid userId format' });
 
   const { data, error } = await supabase
     .from('deals')
