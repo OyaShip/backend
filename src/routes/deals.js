@@ -29,7 +29,8 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ ...deal, tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('POST /deals error:', err);
+    res.status(500).json({ error: 'Failed to create deal' });
   }
 });
 
@@ -94,7 +95,8 @@ router.post('/:id/confirm', requireAuth, async (req, res) => {
     await supabase.from('deals').update({ status: 'confirmed', release_tx: txHash }).eq('id', id);
     res.json({ success: true, status: 'confirmed', tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`POST /deals/${req.params.id}/confirm error:`, err);
+    res.status(500).json({ error: 'Failed to confirm deal' });
   }
 });
 
@@ -132,7 +134,8 @@ router.post('/:id/cancel', requireAuth, async (req, res) => {
     await supabase.from('deals').update({ status: 'cancelled', refund_tx: txHash }).eq('id', id);
     res.json({ success: true, status: 'cancelled', tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`POST /deals/${req.params.id}/cancel error:`, err);
+    res.status(500).json({ error: 'Failed to cancel deal' });
   }
 });
 
