@@ -7,6 +7,10 @@ const router = Router();
 const ESCROW_SECRET = process.env.ESCROW_SECRET_KEY;
 const ESCROW_PUBLIC = process.env.ESCROW_PUBLIC_KEY;
 
+if (!ESCROW_SECRET || !ESCROW_PUBLIC) {
+  throw new Error('ESCROW_SECRET_KEY and ESCROW_PUBLIC_KEY environment variables must be set');
+}
+
 // POST /api/deals
 router.post('/', async (req, res) => {
   const { buyerSecret, seller, amount, description } = req.body;
