@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const supabase   = require('../config/supabase');
+const { requireAuth } = require('../middleware/auth');
 const router = Router();
 
 // GET /api/users/:wallet
@@ -36,7 +37,7 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /api/users/:id/role
-router.patch('/:id/role', async (req, res) => {
+router.patch('/:id/role', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
 
