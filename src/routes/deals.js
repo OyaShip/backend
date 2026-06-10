@@ -1,10 +1,15 @@
 const { Router } = require('express');
 const supabase   = require('../config/supabase');
 const { lockFunds, releaseFunds, refund } = require('../services/escrow');
+const { requireAuth } = require('../middleware/auth');
 const router = Router();
 
 const ESCROW_SECRET = process.env.ESCROW_SECRET_KEY;
 const ESCROW_PUBLIC = process.env.ESCROW_PUBLIC_KEY;
+
+if (!ESCROW_SECRET || !ESCROW_PUBLIC) {
+  throw new Error('ESCROW_SECRET_KEY and ESCROW_PUBLIC_KEY environment variables must be set');
+}
 
 // POST /api/deals
 router.post('/', async (req, res) => {
@@ -28,7 +33,8 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ ...deal, tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('POST /deals error:', err);
+    res.status(500).json({ error: 'Failed to create deal' });
   }
 });
 
@@ -36,6 +42,8 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+  if (!/^G[A-Z2-7]{55}$/.test(userId))
+    return res.status(400).json({ error: 'invalid userId format' });
 
   const { data, error } = await supabase
     .from('deals')
@@ -60,14 +68,13 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/deals/:id/ship
-router.post('/:id/ship', async (req, res) => {
+router.post('/:id/ship', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { sellerId } = req.body;
 
   const { data: deal, error: fetchErr } = await supabase
     .from('deals').select('*').eq('id', id).single();
   if (fetchErr) return res.status(404).json({ error: 'Deal not found' });
-  if (deal.seller !== sellerId) return res.status(403).json({ error: 'Not the seller' });
+  if (deal.seller !== req.wallet) return res.status(403).json({ error: 'Not the seller' });
   if (deal.status !== 'created') return res.status(400).json({ error: 'Invalid deal status' });
 
   const { error } = await supabase
@@ -78,14 +85,13 @@ router.post('/:id/ship', async (req, res) => {
 });
 
 // POST /api/deals/:id/confirm
-router.post('/:id/confirm', async (req, res) => {
+router.post('/:id/confirm', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { buyerId } = req.body;
 
   const { data: deal, error: fetchErr } = await supabase
     .from('deals').select('*').eq('id', id).single();
   if (fetchErr) return res.status(404).json({ error: 'Deal not found' });
-  if (deal.buyer !== buyerId) return res.status(403).json({ error: 'Not the buyer' });
+  if (deal.buyer !== req.wallet) return res.status(403).json({ error: 'Not the buyer' });
   if (deal.status !== 'shipped') return res.status(400).json({ error: 'Invalid deal status' });
 
   try {
@@ -93,19 +99,19 @@ router.post('/:id/confirm', async (req, res) => {
     await supabase.from('deals').update({ status: 'confirmed', release_tx: txHash }).eq('id', id);
     res.json({ success: true, status: 'confirmed', tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`POST /deals/${req.params.id}/confirm error:`, err);
+    res.status(500).json({ error: 'Failed to confirm deal' });
   }
 });
 
 // POST /api/deals/:id/dispute
-router.post('/:id/dispute', async (req, res) => {
+router.post('/:id/dispute', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { callerId } = req.body;
 
   const { data: deal, error: fetchErr } = await supabase
     .from('deals').select('*').eq('id', id).single();
   if (fetchErr) return res.status(404).json({ error: 'Deal not found' });
-  if (deal.buyer !== callerId && deal.seller !== callerId)
+  if (deal.buyer !== req.wallet && deal.seller !== req.wallet)
     return res.status(403).json({ error: 'Unauthorized' });
   if (!['created', 'shipped'].includes(deal.status))
     return res.status(400).json({ error: 'Invalid deal status' });
@@ -118,14 +124,13 @@ router.post('/:id/dispute', async (req, res) => {
 });
 
 // POST /api/deals/:id/cancel
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { buyerId } = req.body;
 
   const { data: deal, error: fetchErr } = await supabase
     .from('deals').select('*').eq('id', id).single();
   if (fetchErr) return res.status(404).json({ error: 'Deal not found' });
-  if (deal.buyer !== buyerId) return res.status(403).json({ error: 'Not the buyer' });
+  if (deal.buyer !== req.wallet) return res.status(403).json({ error: 'Not the buyer' });
   if (deal.status !== 'created') return res.status(400).json({ error: 'Can only cancel before shipment' });
 
   try {
@@ -133,7 +138,8 @@ router.post('/:id/cancel', async (req, res) => {
     await supabase.from('deals').update({ status: 'cancelled', refund_tx: txHash }).eq('id', id);
     res.json({ success: true, status: 'cancelled', tx_hash: txHash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`POST /deals/${req.params.id}/cancel error:`, err);
+    res.status(500).json({ error: 'Failed to cancel deal' });
   }
 });
 
